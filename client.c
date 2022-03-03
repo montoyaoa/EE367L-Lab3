@@ -230,24 +230,31 @@ int main(int argc, char *argv[])
                   perror("display");
                   exit(1);
                }
-
+               
+               //repeat until the last packet is recieved
                int lastPacket = 0;
-
                while(!lastPacket){
+                  //receive a packet
                   if ((numbytes = recv(sockfd, buf, MAXDATASIZE, 0)) == -1) {
 	                  perror("recv");
 	                  exit(1);
 	               }
                   buf[99] = '\0';
-                  
+
+                  //print packet contents to the screen
                   if(numbytes != 0){
                      printf("%s", buf);
                   }
+
+                  //if the packet is the last one
                   if(buf[98] == '\0'){
+                     //end the loop
                      lastPacket = 1;
                   }
+                  //clear the buffer
 	              memset(buf, 0, sizeof(buf)); 
                }
+               //close the socket
                close(sockfd);
                printf("\n");
             }
@@ -259,19 +266,155 @@ int main(int argc, char *argv[])
          case 'd':
             //check that the command is entered correctly
             if(command[1] == ' '){
-               /*
+               //extract the filename from the command
                char filename[100];
                memset(filename, 0, sizeof(filename));
                for(int i = 2; command[i] != '\0' && command[i] != '\n'; i++){
                   filename[i - 2] = command[i];
                }
 
+               int fileExists = 0;
+
+               //if the file already exists
                if(!access(filename, F_OK)){
+                  //remember that fact
+                  fileExists = 1;
                }
+
+               if(fileExists){
+                  char choice[100];
+                  memset(choice, 0, sizeof(choice));
+               
+                  //prompt the user to choose whether to keep or overwrite the file
+                  while(choice[0] != 'y' && choice[0] != 'n'){
+                     memset(choice, 0, sizeof(choice));
+                     printf("%s already exists in this directory. Do you want to overwrite? (y/n) ", filename);
+                     //store the input to the command buffer
+                     fgets(choice, sizeof(choice), stdin);
+                  }
+
+                  //if the user wants to keep the file
+                  if(choice[0] == 'n'){
+                     //break and move on to the next loop
+                     break;
+                  }
+               
+                  //if the user wants to overwrite
+                  if(choice[0] == 'y'){
+                     //delete the old file to make room for the new one
+                     if(remove(filename) == -1){
+                        perror("deletion");
+                        exit(1);
+                     }
+                  }
+               }
+                  
+
+               ///////////////////////////socket setup///////////////////////////////////
+               memset(&hints, 0, sizeof hints);
+               hints.ai_family = AF_UNSPEC;
+               hints.ai_socktype = SOCK_STREAM;
+
+               if ((rv = getaddrinfo(argv[1], PORT, &hints, &servinfo)) != 0) {
+                  fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
+                  return 1;
+               }
+
+               // loop through all the results and connect to the first we can
+               for(p = servinfo; p != NULL; p = p->ai_next) {
+                  if ((sockfd = socket(p->ai_family, p->ai_socktype,
+                     p->ai_protocol)) == -1) {
+                     perror("client: socket");
+                     continue;
+                  }
+
+                  if (connect(sockfd, p->ai_addr, p->ai_addrlen) == -1) {
+                     perror("client: connect");
+                     close(sockfd);
+                     continue;
+                  }
+
+                  break;
+               }
+
+               if (p == NULL) {
+                  fprintf(stderr, "client: failed to connect\n");
+                  return 2;
+               }
+
+               inet_ntop(p->ai_family, get_in_addr((struct sockaddr *)p->ai_addr),
+                  s, sizeof s);
+               //printf("client: connecting to %s\n", s);
+
+               freeaddrinfo(servinfo); // all done with this structure
+               //////////////////////////////////////////////////////////////////////////
+
+
+               //send the download command to the server
+               if((numbytes = send(sockfd, command, MAXDATASIZE, 0)) == -1){
+                  perror("display");
+                  exit(1);
+               }
+
+               //note whether or not the packet recieved is the last one
+               int lastPacket = 0;
+
+               //a string to determine if the server does not have the file
+               char testString[100];
+               memset(testString, 0, sizeof(testString));
+               strcpy(testString, "File ");
+               strcat(testString, filename);
+               strcat(testString, " not found");
+
+               //receive the first packet
+               if ((numbytes = recv(sockfd, buf, MAXDATASIZE, 0)) == -1) {
+	               perror("recv");
+	               exit(1);
+	            }
+               buf[99] = '\0';
+
+               //if it says the server doesn't have the file
+               if(strcmp(testString, buf) == 0){
+                  //print that fact
+                  printf("%s\n", buf);
+               }
+               //otherwise
+               //(the server is responding with the file contents)
                else{
+                  //create a new file in append mode
+                  FILE * newFile = fopen(filename, "a");
+                  //write the contents of the first packet to the file
+                  if(numbytes != 0){
+                     fprintf(newFile, "%s", buf);
+                  }
+
+                  //repeat until the last packet is sent
+                  while(!lastPacket){
+                     //receive the next packet
+                     if ((numbytes = recv(sockfd, buf, MAXDATASIZE, 0)) == -1) {
+	                     perror("recv");
+	                     exit(1);
+	                  }
+                     buf[99] = '\0';
+                     if(buf[98] == '\0'){
+                        lastPacket = 1;
+                     }
+
+                     //write packet contents to file 
+                     if(numbytes != 0){
+                        fprintf(newFile, "%s", buf);
+                     }
+
+                     //clear buffer
+	                  memset(buf, 0, sizeof(buf)); 
+                  }
+
+                  //close the file after done writing
+                  fclose(newFile);
                }
-               */
-               //TODO: Implement file download from server
+
+               //done talking to the server
+               close(sockfd);
             }
             else{
                printf("invalid command format\n");
