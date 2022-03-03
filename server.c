@@ -123,7 +123,11 @@ int main(void)
    //100-byte buffer
    char readbuffer[MAXDATASIZE];
 
+   //memset(readbuffer, 3, sizeof(readbuffer));
+
 	while(1) {  // main accept() loop
+      int lastPacket = 0;
+
       ///////ACCEPT INCOMING CONNECTION///////////////
 		sin_size = sizeof their_addr;
 		new_fd = accept(sockfd, (struct sockaddr *)&their_addr, &sin_size);
@@ -148,7 +152,7 @@ int main(void)
             perror("recv");
             exit(1);
          }
-         printf("server: got %s\n", readbuffer);
+         //printf("server: got %s\n", readbuffer);
 
          char filename[MAXDATASIZE];
          
@@ -204,6 +208,9 @@ int main(void)
             break;
             //display
             case 'p':
+            //download
+            case 'd':
+            //in both cases, the server side is identical
                //clear the filename buffer (in case theres junk data in there)
                memset(filename, 0, sizeof(filename));
                //fill the filename buffer with the filename
@@ -211,27 +218,36 @@ int main(void)
                for(int i = 2; readbuffer[i] != '\0' && readbuffer[i] != '\n'; i++){
                   filename[i - 2] = readbuffer[i];
                }
-               //create a child of the child process
-               //with a pipe fd[0] connecting child and subchild
-               pipe(fd[0]);
-               if(!fork()){   
-                  //set the pipe as the output for programs instead of the terminal
-                  dup2(fd[0][1], STDOUT_FILENO);
-                  //execute cat
-                  //output is piped to parent
-                  execlp("/bin/cat", "cat", filename, (char*)NULL);
-			         exit(0);
+               //if the file exists
+               if(!access(filename, F_OK)){
+                  //create a child of the child process
+                  //with a pipe fd[0] connecting child and subchild
+                  pipe(fd[0]);
+                  //and then link the subchild->child pipe with the 
+                  //child->parent pipe, bypassing the manual writing from child to parent
+                  dup2(fd[1][1], fd[0][1]);
+                  if(!fork()){   
+                     //set the subchild->child pipe as the output for programs instead of the terminal
+                     dup2(fd[0][1], STDOUT_FILENO);
+                     //execute cat
+                     //output is piped to parent
+                     execlp("/bin/cat", "cat", filename, (char*)NULL);
+			            exit(0);
+                  }
+                  //once the subchild is done
+                  wait(NULL);
+                  //end the child early. the pipe already has the buffer we want.
+                  close(new_fd);
+                  exit(0);
                }
-               //once the subchild is done
-               wait(NULL);
-               //copy the output of ls to the buffer
-               read(fd[0][0], readbuffer, 100);
-               //TODO: This only sends the first 100 bytes of ls back to the parent
-               //Figure out a way to send the whole output regardless of length
-            break;
-            //download
-            case 'd':
-               //TODO: implement download
+               //if the file does not exist
+               else{
+                  //clear the buffer and write that the file was not found
+                  memset(readbuffer, 0, sizeof(readbuffer));
+                  strcpy(readbuffer, "File ");
+                  strcat(readbuffer, filename);
+                  strcat(readbuffer, " not found");
+               }
             break;
          }
          //write the buffer to the parent-child pipe
@@ -242,23 +258,40 @@ int main(void)
       //once the child is done
       wait(NULL);
 
-      //read the buffer that it sent back to the parent
-      read(fd[1][0], readbuffer, 100);
+      //NOTE: packets are 100 bytes. the first 99 are data and the last is always NULL
+      //continuously transmit packets until the last one is read
+      while(!lastPacket){
+         //read the buffer that it sent back to the parent
+         read(fd[1][0], readbuffer, 99);
+         
+         //the last packet is when the readbuffer ends with a NULL
+         if(readbuffer[98] == '\0'){
+            lastPacket = 1;
+         }
 
-      printf("sending %s to client\n", readbuffer);
-      //create a child
-      if(!fork()){
-         //send the contents of the buffer to the client
-			if (send(new_fd, readbuffer, 100, 0) == -1)
-				perror("send");
-         exit(0);
+         //printf("sending %s to client\n", readbuffer);
+         //create a child
+         if(!fork()){
+            //send the packet to the client
+			   if (send(new_fd, readbuffer, 100, 0) == -1)
+				   perror("send");
+            exit(0);
+         }
+         //once the child is done
+         wait(NULL);
+         
+         /*
+         for(int i = 0; i < 100; i++){
+            printf("readbuffer[%d]=%c %d\n", i, readbuffer[i], readbuffer[i]);
+         }
+         */
+      
+         //clear packet
+         memset(readbuffer, 0, sizeof(readbuffer));
+     
       }
-      //once the child is done
-      wait(NULL);
 		close(new_fd);  // parent doesn't need this
       
-      //clear read buffer
-      memset(readbuffer, 0, sizeof(readbuffer));
    }
 
 	return 0;

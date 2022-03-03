@@ -93,7 +93,7 @@ int main(int argc, char *argv[])
 
 	         inet_ntop(p->ai_family, get_in_addr((struct sockaddr *)p->ai_addr),
 			      s, sizeof s);
-	         printf("client: connecting to %s\n", s);
+	         //printf("client: connecting to %s\n", s);
 
 	         freeaddrinfo(servinfo); // all done with this structure
             //////////////////////////////////////////////////////////////////////////
@@ -113,7 +113,7 @@ int main(int argc, char *argv[])
             //parse and display the server reply
             buf[numbytes] = '\0';
             if(numbytes != 0){
-	            printf("\n%s\n",buf);
+	            printf("%s\n",buf);
                close(sockfd);
             }
          break;
@@ -155,7 +155,7 @@ int main(int argc, char *argv[])
 
                inet_ntop(p->ai_family, get_in_addr((struct sockaddr *)p->ai_addr),
                   s, sizeof s);
-               printf("client: connecting to %s\n", s);
+               //printf("client: connecting to %s\n", s);
 
                freeaddrinfo(servinfo); // all done with this structure
                //////////////////////////////////////////////////////////////////////////
@@ -173,9 +173,8 @@ int main(int argc, char *argv[])
 	            }
 
                //parse and display the server reply
-               buf[numbytes] = '\0';
                if(numbytes != 0){
-	               printf("\n%s\n",buf);
+	               printf("%s\n",buf);
                   close(sockfd);
                }
             }
@@ -221,7 +220,7 @@ int main(int argc, char *argv[])
 
                inet_ntop(p->ai_family, get_in_addr((struct sockaddr *)p->ai_addr),
                   s, sizeof s);
-               printf("client: connecting to %s\n", s);
+               //printf("client: connecting to %s\n", s);
 
                freeaddrinfo(servinfo); // all done with this structure
                //////////////////////////////////////////////////////////////////////////
@@ -232,21 +231,25 @@ int main(int argc, char *argv[])
                   exit(1);
                }
 
-               //recieve the server reply
-	            if ((numbytes = recv(sockfd, buf, MAXDATASIZE, 0)) == -1) {
-	               perror("recv");
-	               exit(1);
-	            }
+               int lastPacket = 0;
 
-               //TODO: This currently only displays the first 100 bytes of the file.
-               //Have the server continually send the file data until the client prints it all out
-
-               //parse and display the server reply
-               buf[numbytes] = '\0';
-               if(numbytes != 0){
-	               printf("\n%s\n",buf);
-                  close(sockfd);
+               while(!lastPacket){
+                  if ((numbytes = recv(sockfd, buf, MAXDATASIZE, 0)) == -1) {
+	                  perror("recv");
+	                  exit(1);
+	               }
+                  buf[99] = '\0';
+                  
+                  if(numbytes != 0){
+                     printf("%s", buf);
+                  }
+                  if(buf[98] == '\0'){
+                     lastPacket = 1;
+                  }
+	              memset(buf, 0, sizeof(buf)); 
                }
+               close(sockfd);
+               printf("\n");
             }
             else{
                printf("invalid command format\n");
@@ -256,6 +259,18 @@ int main(int argc, char *argv[])
          case 'd':
             //check that the command is entered correctly
             if(command[1] == ' '){
+               /*
+               char filename[100];
+               memset(filename, 0, sizeof(filename));
+               for(int i = 2; command[i] != '\0' && command[i] != '\n'; i++){
+                  filename[i - 2] = command[i];
+               }
+
+               if(!access(filename, F_OK)){
+               }
+               else{
+               }
+               */
                //TODO: Implement file download from server
             }
             else{
